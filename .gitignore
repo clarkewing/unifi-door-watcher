@@ -1,0 +1,47 @@
+# --- secrets / local config ---
+# These files hold real UniFi tokens and door UUIDs; NEVER commit them.
+# `deploy/config.example.toml` and `deploy/env.example` are the tracked
+# templates that documentation refers to.
+local.env
+local.config.toml
+*.env
+!deploy/env.example
+config.toml
+!deploy/config.example.toml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+build/
+dist/
+wheels/
+.eggs/
+
+# --- venv ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- test / lint caches ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- runtime artifacts ---
+*.log
+*.pid

@@ -1,0 +1,58 @@
+# /etc/unifi-door-watcher/config.toml
+#
+# Secrets (ACCESS_TOKEN, PROTECT_*) are pulled from the systemd
+# EnvironmentFile at /etc/unifi-door-watcher/env. ${VAR} is expanded at startup.
+
+[access]
+host = "192.168.1.1"
+port = 12445
+token = "${ACCESS_TOKEN}"
+verify_tls = false
+reconnect_backoff_seconds = [1, 2, 5, 15, 30, 60]
+reconcile_lookback_seconds = 120
+liveness_timeout_seconds = 90
+
+[protect]
+# Bearer token for the Protect Integration API. Required if the webhook
+# URLs use the `/proxy/protect/integration/v1/…` path. Generated in
+# Protect → Settings → Control Plane → Integrations.
+token = "${PROTECT_TOKEN}"
+# Webhook URLs for each alert type. Note: Protect's Alarm Manager does
+# NOT template the alarm message from the body we POST — it just
+# triggers the alarm whose Title/Body are configured in the Protect UI.
+# So all doors firing the same type get the same notification text.
+unauthorized_webhook_url = "${PROTECT_UNAUTH_URL}"
+held_open_webhook_url = "${PROTECT_HELD_URL}"
+request_timeout_seconds = 5
+retry_attempts = 3
+dedupe_window_seconds = 30
+
+[server]
+host = "127.0.0.1"
+port = 8080
+expose_state = true
+
+[defaults]
+grace_seconds = 8
+held_open_seconds = 60
+
+# Run `python -m scripts.bootstrap_doors --config /etc/unifi-door-watcher/config.toml --write`
+# to populate the [[door]] blocks below from the live Access API. Then hand-edit
+# the two exterior doors to add `grace_seconds = 0` (strict mode).
+#
+# `name` is the operator-facing label that appears in Protect alerts. The
+# watcher matches events by `id` (door UUID) and `event_object_id` from the
+# wire — never by name — so you can change `name` freely.
+
+[[door]]
+# Front Entrance (exterior — strict, no grace)
+id = "REPLACE-WITH-FRONT-DOOR-UUID"
+name = "Front Entrance"
+grace_seconds = 0
+held_open_seconds = 30
+
+[[door]]
+# IT Closet (interior)
+id = "REPLACE-WITH-IT-CLOSET-UUID"
+name = "IT Closet"
+grace_seconds = 15

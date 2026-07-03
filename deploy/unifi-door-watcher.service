@@ -1,0 +1,20 @@
+[Unit]
+Description=UniFi Access door watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=unifi-door-watcher
+EnvironmentFile=/etc/unifi-door-watcher/env
+ExecStart=/opt/unifi-door-watcher/.venv/bin/python -m unifi_door_watcher --config /etc/unifi-door-watcher/config.toml
+Restart=always
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target
