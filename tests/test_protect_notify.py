@@ -186,3 +186,66 @@ async def test_api_key_header_when_token_set():
         assert "Authorization" not in calls[0].headers
     finally:
         await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_per_door_url_override_used_when_set():
+    """A door with its own webhook URL routes there; doors without one
+    fall back to the global URL in [protect]."""
+    from unifi_door_watcher.config import DoorConfig
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    doors_by_id = {
+        "with-override": DoorConfig(
+            id="with-override",
+            name="Front",
+            unauthorized_webhook_url="https://protect.test/front-unauth",
+            held_open_webhook_url="https://protect.test/front-held",
+        ),
+        "no-override": DoorConfig(id="no-override", name="Storage"),
+    }
+    sink = ProtectAlertSink(make_cfg(), doors_by_id=doors_by_id)
+    await sink._client.aclose()
+    sink._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await sink.start()
+    try:
+        await sink.send(make_alert("unauthorized", "with-override"))
+        await sink.send(make_alert("held_open", "with-override"))
+        await sink.send(make_alert("unauthorized", "no-override"))
+        await sink.send(make_alert("held_open", "no-override"))
+        await _drain(sink)
+        urls = [str(c.url) for c in calls]
+        assert "https://protect.test/front-unauth" in urls
+        assert "https://protect.test/front-held" in urls
+        assert "https://protect.test/unauth" in urls  # global fallback
+        assert "https://protect.test/held" in urls
+    finally:
+        await sink.stop()
+
+
+@pytest.mark.asyncio
+async def test_no_url_anywhere_logs_and_drops():
+    """If neither per-door nor global URL is set, alert is dropped with
+    an error. AppConfig validation should make this unreachable in
+    practice, but the sink defends itself."""
+    from unifi_door_watcher.config import DoorConfig, ProtectConfig
+
+    cfg = ProtectConfig()  # both globals None
+    doors_by_id = {"x": DoorConfig(id="x", name="X")}
+    sink = ProtectAlertSink(cfg, doors_by_id=doors_by_id)
+    await sink.start()
+    try:
+        await sink.send(make_alert("unauthorized", "x"))
+        for _ in range(50):
+            if sink.failed_deliveries:
+                break
+            await asyncio.sleep(0.02)
+        assert sink.failed_deliveries == 1
+        assert sink.delivered == 0
+    finally:
+        await sink.stop()

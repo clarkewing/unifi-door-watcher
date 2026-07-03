@@ -82,3 +82,86 @@ def test_urls_parsed(monkeypatch, tmp_path):
     cfg = load_config(_write(tmp_path))
     assert str(cfg.protect.unauthorized_webhook_url).startswith("https://")
     assert cfg.access.ws_url.startswith("wss://")
+
+
+def test_per_door_webhook_overrides_loaded(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    body = CONFIG_TEMPLATE + (
+        "\n[[door]]\n"
+        'id = "vip"\n'
+        'name = "VIP Entrance"\n'
+        'unauthorized_webhook_url = "https://protect.example/vip-unauth"\n'
+        'held_open_webhook_url    = "https://protect.example/vip-held"\n'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    door = cfg.doors_by_id["vip"]
+    assert str(door.unauthorized_webhook_url) == "https://protect.example/vip-unauth"
+    assert str(door.held_open_webhook_url) == "https://protect.example/vip-held"
+
+
+def test_global_urls_optional_when_all_doors_have_overrides(monkeypatch, tmp_path):
+    """A config that drops both [protect].*_webhook_url globals must be
+    valid as long as every door brings its own pair."""
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    body = """
+[access]
+host = "10.0.0.1"
+token = "${ACCESS_TOKEN}"
+
+[protect]
+
+[[door]]
+id = "a"
+name = "A"
+unauthorized_webhook_url = "https://protect.example/a-unauth"
+held_open_webhook_url    = "https://protect.example/a-held"
+"""
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.protect.unauthorized_webhook_url is None
+    assert cfg.doors_by_id["a"].unauthorized_webhook_url is not None
+
+
+def test_door_without_any_webhook_rejected(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    body = """
+[access]
+host = "10.0.0.1"
+token = "${ACCESS_TOKEN}"
+
+[protect]
+
+[[door]]
+id = "lonely"
+name = "Lonely Door"
+"""
+    with pytest.raises(Exception) as ei:
+        load_config(_write(tmp_path, body))
+    assert "no unauthorized webhook" in str(ei.value)
+
+
+def test_protect_bootstrap_section_loaded(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    body = CONFIG_TEMPLATE + (
+        "\n[protect.bootstrap]\n"
+        'host = "10.12.120.216"\n'
+        'username = "bot"\n'
+        'password = "hunter2"\n'
+        'notification_users = ["alice@example.com", "Bob Example"]\n'
+        'notification_channels = ["push", "email"]\n'
+        "cooldown_seconds = 45\n"
+    )
+    cfg = load_config(_write(tmp_path, body))
+    boot = cfg.protect.bootstrap
+    assert boot is not None
+    assert boot.host == "10.12.120.216"
+    assert boot.username == "bot"
+    assert boot.password == "hunter2"
+    assert boot.notification_users == ["alice@example.com", "Bob Example"]
+    assert boot.notification_channels == ["push", "email"]
+    assert boot.cooldown_seconds == 45
+
+
+def test_protect_bootstrap_section_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    cfg = load_config(_write(tmp_path))
+    assert cfg.protect.bootstrap is None

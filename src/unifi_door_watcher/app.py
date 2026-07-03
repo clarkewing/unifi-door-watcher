@@ -23,7 +23,7 @@ def create_app(config: AppConfig) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = DoorStateRegistry(doors_by_id=config.doors_by_id)
         client = AccessClient(config.access)
-        sink = ProtectAlertSink(config.protect)
+        sink = ProtectAlertSink(config.protect, doors_by_id=config.doors_by_id)
         pipeline = DetectionPipeline(registry, sink)
         stream = AccessEventStream(config.access, on_event=pipeline.handle, client=client)
 

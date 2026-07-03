@@ -5,7 +5,7 @@ import logging
 
 import httpx
 
-from ..config import ProtectConfig
+from ..config import DoorConfig, ProtectConfig
 from ..models import Alert
 from .dedupe import TTLDedupe
 
@@ -20,8 +20,16 @@ class ProtectAlertSink:
     within a configurable TTL.
     """
 
-    def __init__(self, cfg: ProtectConfig) -> None:
+    def __init__(
+        self,
+        cfg: ProtectConfig,
+        doors_by_id: dict[str, DoorConfig] | None = None,
+    ) -> None:
         self._cfg = cfg
+        # Per-door URL overrides looked up by alert.door_id. Falls back to
+        # the global cfg URLs when a door has no override (or when the
+        # caller didn't pass any doors, e.g. in unit tests).
+        self._doors_by_id: dict[str, DoorConfig] = doors_by_id or {}
         # Protect's Alarm Manager URLs are usually on the UDM/UNVR with a
         # self-signed cert — disable TLS verification by default. We could
         # add a verify flag later if a real cert is in front.
@@ -86,13 +94,28 @@ class ProtectAlertSink:
                 log.exception("unexpected delivery error for %s", alert)
                 self.failed_deliveries += 1
 
-    def _url_for(self, alert: Alert) -> str:
+    def _url_for(self, alert: Alert) -> str | None:
+        """Per-door override wins; global fallback otherwise. Returns None
+        only if neither is configured — caller treats that as a delivery
+        failure. (AppConfig validation should make this unreachable.)"""
+        door = self._doors_by_id.get(alert.door_id)
         if alert.alert_type == "unauthorized":
-            return str(self._cfg.unauthorized_webhook_url)
-        return str(self._cfg.held_open_webhook_url)
+            per_door = door.unauthorized_webhook_url if door else None
+            url = per_door or self._cfg.unauthorized_webhook_url
+        else:
+            per_door = door.held_open_webhook_url if door else None
+            url = per_door or self._cfg.held_open_webhook_url
+        return str(url) if url else None
 
     async def _deliver_with_retries(self, alert: Alert) -> bool:
         url = self._url_for(alert)
+        if url is None:
+            log.error(
+                "no webhook URL configured for %s alert on %s — dropping",
+                alert.alert_type,
+                alert.door_name,
+            )
+            return False
         body = alert.model_dump(mode="json")
 
         # Protect's Integration API authenticates via `X-API-Key`.

@@ -13,19 +13,33 @@ reconcile_lookback_seconds = 120
 liveness_timeout_seconds = 90
 
 [protect]
-# Bearer token for the Protect Integration API. Required if the webhook
-# URLs use the `/proxy/protect/integration/v1/…` path. Generated in
+# Bearer token (X-API-Key) for the Protect Integration API. Required for
+# firing webhooks under `/proxy/protect/integration/v1/…`. Generated in
 # Protect → Settings → Control Plane → Integrations.
 token = "${PROTECT_TOKEN}"
-# Webhook URLs for each alert type. Note: Protect's Alarm Manager does
-# NOT template the alarm message from the body we POST — it just
-# triggers the alarm whose Title/Body are configured in the Protect UI.
-# So all doors firing the same type get the same notification text.
+# Global fallback webhook URLs. Optional — if every door has its own
+# per-door override (populated by bootstrap_protect_alarms.py), these
+# can be omitted entirely. Doors without an override use the global.
 unauthorized_webhook_url = "${PROTECT_UNAUTH_URL}"
 held_open_webhook_url = "${PROTECT_HELD_URL}"
 request_timeout_seconds = 5
 retry_attempts = 3
 dedupe_window_seconds = 30
+
+# Optional. Used ONLY by `scripts/bootstrap_protect_alarms.py` to create
+# one alarm per door per alert type — so each door produces its own
+# named notification instead of a generic one. The runtime watcher does
+# not read this section.
+[protect.bootstrap]
+host = "10.12.120.216"                         # Protect controller host
+username = "${PROTECT_USERNAME}"               # local Protect user
+password = "${PROTECT_PASSWORD}"
+# Users to notify. Match by ID, email, or "First Last". Case-insensitive
+# on email/name. The bootstrap script resolves these against
+# /proxy/protect/api/users.
+notification_users = ["alice@example.com", "Bob Example"]
+notification_channels = ["push"]               # or ["push", "email"]
+cooldown_seconds = 30
 
 [server]
 host = "127.0.0.1"
