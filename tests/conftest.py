@@ -88,7 +88,7 @@ def unlock_evt(door_id: str, method: str = "NFC", actor_name: str = "Jane Doe") 
 def access_log_evt(
     event_object_id: str = "uah-default",
     actor_id: str = "user-uuid",
-    actor_name: str = "Hugo Clarke-Wing",
+    actor_name: str = "Alice Example",
     result: str = "ACCESS",
 ) -> dict[str, Any]:
     """Mirrors `access.logs.add` for an unlock. `event_object_id` is the

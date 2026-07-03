@@ -36,10 +36,10 @@ async def test_remote_unlock_followed_by_access_log_attributes_actor(
     assert state.last_unlock_event_object_id == "uah-a"
 
     fake_clock.tick(1)
-    await pipeline.handle(access_log_evt(event_object_id="uah-a", actor_name="Hugo Clarke-Wing"))
+    await pipeline.handle(access_log_evt(event_object_id="uah-a", actor_name="Alice Example"))
 
     assert state.last_unlock_actor_id == "user-uuid"
-    assert state.last_unlock_actor_name == "Hugo Clarke-Wing"
+    assert state.last_unlock_actor_name == "Alice Example"
 
 
 @pytest.mark.asyncio
@@ -135,7 +135,7 @@ async def test_held_open_alert_includes_enriched_actor(pipeline, sink, registry,
     """End-to-end: remote unlock → logs.add → DPS open → held_open. The
     Protect alert payload should carry the attributed actor."""
     await pipeline.handle(remote_unlock_evt("int-1", event_object_id="uah-a"))
-    await pipeline.handle(access_log_evt(event_object_id="uah-a", actor_name="Hugo Clarke-Wing"))
+    await pipeline.handle(access_log_evt(event_object_id="uah-a", actor_name="Alice Example"))
     await pipeline.handle(dps_evt("int-1", "open"))
     await asyncio.sleep(2.2)  # held_open_seconds = 2 in fixture
     await drain_tasks()
@@ -144,5 +144,5 @@ async def test_held_open_alert_includes_enriched_actor(pipeline, sink, registry,
     assert held[0].details["last_unlock_method"] == "remote"
     assert held[0].details["last_unlock_actor"] == {
         "id": "user-uuid",
-        "name": "Hugo Clarke-Wing",
+        "name": "Alice Example",
     }
