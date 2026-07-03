@@ -11,7 +11,10 @@ ExecStart=/opt/unifi-door-watcher/.venv/bin/python -m unifi_door_watcher --confi
 Restart=always
 RestartSec=5
 ProtectSystem=strict
-ProtectHome=true
+# `read-only` (not `true`) so the service can read its own code when it's
+# deployed under /home/forge/… by Laravel Forge. It still can't write to
+# any home directory — that's the substantive protection we want.
+ProtectHome=read-only
 PrivateTmp=true
 NoNewPrivileges=true
 ReadWritePaths=
