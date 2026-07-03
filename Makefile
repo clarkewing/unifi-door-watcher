@@ -1,8 +1,11 @@
 .PHONY: lint lint-fix fmt fmt-check test all
 
-PY := .venv/bin/python
-RUFF := .venv/bin/ruff
-PYTEST := .venv/bin/pytest
+# Prefer the project venv when present (typical local dev loop) but fall
+# back to PATH-resolved commands so CI, systemd-launched shells, and any
+# externally-managed environment work without adjustment.
+VENV := .venv/bin
+RUFF   := $(shell test -x $(VENV)/ruff   && echo $(VENV)/ruff   || echo ruff)
+PYTEST := $(shell test -x $(VENV)/pytest && echo $(VENV)/pytest || echo pytest)
 
 # `ruff check` — rule-based linter. Safe auto-fixes only.
 lint:
