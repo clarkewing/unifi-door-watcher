@@ -161,3 +161,48 @@ def test_protect_bootstrap_section_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("ACCESS_TOKEN", "t")
     cfg = load_config(_write(tmp_path))
     assert cfg.protect.bootstrap is None
+
+
+def test_protect_bootstrap_dropped_when_env_vars_missing(monkeypatch, tmp_path):
+    """The bootstrap section holds workstation-only credentials. On the
+    runtime host those env vars aren't set — the section should be
+    silently dropped rather than crashing config load."""
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    monkeypatch.delenv("PROTECT_USERNAME", raising=False)
+    monkeypatch.delenv("PROTECT_PASSWORD", raising=False)
+    body = CONFIG_TEMPLATE + (
+        "\n[protect.bootstrap]\n"
+        'host = "10.12.120.216"\n'
+        'username = "${PROTECT_USERNAME}"\n'
+        'password = "${PROTECT_PASSWORD}"\n'
+        'notification_users = ["alice@example.com"]\n'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.protect.bootstrap is None
+
+
+def test_protect_bootstrap_kept_when_env_vars_present(monkeypatch, tmp_path):
+    """When the bootstrap env vars ARE set, the section is preserved and
+    values are expanded normally."""
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    monkeypatch.setenv("PROTECT_USERNAME", "bot")
+    monkeypatch.setenv("PROTECT_PASSWORD", "hunter2")
+    body = CONFIG_TEMPLATE + (
+        "\n[protect.bootstrap]\n"
+        'host = "10.12.120.216"\n'
+        'username = "${PROTECT_USERNAME}"\n'
+        'password = "${PROTECT_PASSWORD}"\n'
+        'notification_users = ["alice@example.com"]\n'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.protect.bootstrap is not None
+    assert cfg.protect.bootstrap.username == "bot"
+    assert cfg.protect.bootstrap.password == "hunter2"
+
+
+def test_required_env_var_still_raises(monkeypatch, tmp_path):
+    """Missing env vars in REQUIRED sections must still raise — the
+    optional-section tolerance is narrow and specific."""
+    monkeypatch.delenv("ACCESS_TOKEN", raising=False)
+    with pytest.raises(_MissingEnvVar):
+        load_config(_write(tmp_path))

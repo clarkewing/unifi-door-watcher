@@ -59,8 +59,12 @@ class AccessConfig(BaseModel):
 class ProtectBootstrapConfig(BaseModel):
     """Config used only by `scripts/bootstrap_protect_alarms.py` to create/update
     Protect Alarm Manager automations. Not read by the runtime watcher — the
-    watcher only needs the trigger URLs on each door (or the global fallbacks)
-    plus [protect].token."""
+    watcher only needs the per-door trigger URLs plus [protect].token.
+
+    Fine to keep on the runtime host (the extra credentials are behind the
+    same file perms as the runtime tokens). `load_config` also tolerates the
+    env vars being unset — the whole section is dropped in that case — so
+    hosts that will never bootstrap can leave them out."""
 
     host: str
     username: str
@@ -106,8 +110,9 @@ class DoorConfig(BaseModel):
     held_open_seconds: int | None = None
     # Per-door Protect Alarm Manager webhook URLs. Populated by
     # `bootstrap_protect_alarms.py` so each (door, alert_type) pair gets its
-    # own alarm with a door-specific title/body. When unset, the
-    # corresponding [protect].*_webhook_url global is used.
+    # own alarm with a door-specific title/body. Optional at the field level,
+    # but AppConfig validation requires both to be set on every configured
+    # door — the watcher refuses to start until they are.
     unauthorized_webhook_url: HttpUrl | None = None
     held_open_webhook_url: HttpUrl | None = None
 
@@ -171,10 +176,44 @@ class AppConfig(BaseModel):
         return {d.id: d for d in self.doors}
 
 
+# Optional TOML sections whose env-var placeholders should be tolerated.
+# If any `${VAR}` inside these paths can't be expanded (because the env
+# var is unset on the current host), the section is dropped entirely
+# rather than raising. Used for tooling-only sections that are safe to
+# leave unpopulated in environments where those tools won't run — CI,
+# hosts without bootstrap credentials, etc.
+_OPTIONAL_SECTIONS: tuple[tuple[str, ...], ...] = (("protect", "bootstrap"),)
+
+
+def _drop_optional_sections_with_missing_env(raw: dict[str, Any]) -> None:
+    """Walk each declared optional section. If expanding its env vars would
+    raise `_MissingEnvVar`, delete the section from `raw` in place. Sections
+    whose vars ARE set stay untouched and will be expanded normally by the
+    subsequent full-tree expansion pass."""
+    for path in _OPTIONAL_SECTIONS:
+        parent = raw
+        for key in path[:-1]:
+            child = parent.get(key)
+            if not isinstance(child, dict):
+                parent = None
+                break
+            parent = child
+        if parent is None:
+            continue
+        leaf = path[-1]
+        if leaf not in parent:
+            continue
+        try:
+            _expand_env(parent[leaf])
+        except _MissingEnvVar:
+            del parent[leaf]
+
+
 def load_config(path: str | Path) -> AppConfig:
     path = Path(path)
 
     with path.open("rb") as f:
         raw: dict[str, Any] = tomllib.load(f)
 
+    _drop_optional_sections_with_missing_env(raw)
     return AppConfig.model_validate(_expand_env(raw))

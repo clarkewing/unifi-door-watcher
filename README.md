@@ -96,8 +96,10 @@ by hand from the Protect Alarm Manager UI. See
 ## Bootstrap workflow
 
 Two scripts turn an empty config into a fully-populated one. Both are
-idempotent — re-run whenever things change on either the Access or
-Protect side.
+idempotent — re-run whenever doors are added or renamed. Simplest
+workflow is to SSH into the runtime host and run them there, so the
+config is edited in place and there's no "copy the file to my laptop
+and back" ceremony.
 
 ### 1. Populate the door list from Access
 
@@ -123,19 +125,25 @@ whatever you configured in `[protect.bootstrap].notification_users`.
 Writes each alarm's trigger URL back into the door's config block.
 
 Protect's Alarm Manager doesn't template notification text from the
-webhook body — the alarm's static `name`/`message` are what get pushed
-to phones. So getting per-door notification text means one alarm per
-door per alert type. This script does that with two API calls per door
-instead of 48 clicks in the UI.
+webhook body — the alarm's static name/message are what get pushed to
+phones. So getting per-door notification text means one alarm per door
+per alert type. This script does that with two API calls per door
+instead of dozens of clicks in the UI.
 
 Requires a **local Protect user** (Protect → Users → Add User → Local
 Access Only) with permission to manage automations, plus the endpoint
-details in `[protect.bootstrap]`. Uses session-cookie auth (which
-Protect's private automations API requires), not the `X-API-Key` token
-the runtime uses for firing webhooks.
+details in `[protect.bootstrap]` and the `PROTECT_USERNAME` /
+`PROTECT_PASSWORD` env vars. Uses session-cookie auth against
+Protect's private automations API — a separate credential from the
+`X-API-Key` token the runtime uses for firing webhooks.
 
-If you'd rather not run the script, you can create the alarms by hand
-in Protect's UI and paste the resulting webhook URLs into each door's
+Hosts that will never bootstrap can omit `PROTECT_USERNAME` /
+`PROTECT_PASSWORD` entirely: config loading tolerates their absence
+and drops the `[protect.bootstrap]` section silently. The runtime
+service starts fine without them.
+
+If you'd rather not run the script, create the alarms by hand in
+Protect's UI and paste the resulting webhook URLs into each door's
 `unauthorized_webhook_url` and `held_open_webhook_url` fields.
 
 ## Deployment

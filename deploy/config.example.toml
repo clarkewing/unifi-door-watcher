@@ -26,13 +26,17 @@ dedupe_window_seconds = 30
 # named notification instead of a generic one. The runtime watcher does
 # not read this section.
 [protect.bootstrap]
-host = "10.12.120.216"                         # Protect controller host
+host = "192.168.1.1"                           # Protect controller host
 username = "${PROTECT_USERNAME}"               # local Protect user
 password = "${PROTECT_PASSWORD}"
 # Users to notify. Match by ID, email, or "First Last". Case-insensitive
 # on email/name. The bootstrap script resolves these against
 # /proxy/protect/api/users.
-notification_users = ["alice@example.com", "Bob Example"]
+notification_users = [
+    "alice@example.com",
+    "Bob Example",
+    # add teammates here
+]
 notification_channels = ["push"]               # or ["push", "email"]
 cooldown_seconds = 30
 
@@ -69,13 +73,13 @@ id = "REPLACE-WITH-FRONT-DOOR-UUID"
 name = "Front Entrance"
 grace_seconds = 0
 held_open_seconds = 30
-unauthorized_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
-held_open_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+unauthorized_webhook_url = "https://192.168.1.1/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+held_open_webhook_url = "https://192.168.1.1/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
 
 [[door]]
 # IT Closet (interior)
 id = "REPLACE-WITH-IT-CLOSET-UUID"
 name = "IT Closet"
 grace_seconds = 15
-unauthorized_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
-held_open_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+unauthorized_webhook_url = "https://192.168.1.1/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+held_open_webhook_url = "https://192.168.1.1/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
