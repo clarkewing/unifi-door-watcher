@@ -77,12 +77,6 @@ class ProtectBootstrapConfig(BaseModel):
 
 
 class ProtectConfig(BaseModel):
-    # Global fallback URLs. Optional — if every door has its own per-door
-    # override (see DoorConfig), the globals can be omitted entirely.
-    # `AppConfig` cross-validates that each (door, alert_type) pair is
-    # covered by either a per-door URL or the matching global.
-    unauthorized_webhook_url: HttpUrl | None = None
-    held_open_webhook_url: HttpUrl | None = None
     # Bearer token (`X-API-Key`) for the Protect Integration API. Required
     # for the /proxy/protect/integration/v1/… trigger endpoints.
     token: str | None = None
@@ -151,19 +145,23 @@ class AppConfig(BaseModel):
             if d.held_open_seconds is None:
                 d.held_open_seconds = self.defaults.held_open_seconds
 
-            # Every door must have *some* destination for each alert type.
-            # Fail loudly at startup rather than silently dropping alerts.
-            if d.unauthorized_webhook_url is None and self.protect.unauthorized_webhook_url is None:
+            # Every door must have its own webhook URL for each alert type.
+            # Populate via `bootstrap_protect_alarms.py` or add the URLs by
+            # hand — either way the config must be complete before the
+            # watcher starts. Fail loudly rather than silently dropping alerts.
+            if d.unauthorized_webhook_url is None:
                 raise ValueError(
-                    f"door {d.id!r} ({d.name!r}) has no unauthorized webhook: "
-                    f"set [protect].unauthorized_webhook_url or the per-door "
-                    f"unauthorized_webhook_url"
+                    f"door {d.id!r} ({d.name!r}) has no unauthorized_webhook_url. "
+                    f"Run `python -m scripts.bootstrap_protect_alarms --config "
+                    f"<path> --write` to create alarms + populate URLs, or set "
+                    f"unauthorized_webhook_url on this door by hand."
                 )
-            if d.held_open_webhook_url is None and self.protect.held_open_webhook_url is None:
+            if d.held_open_webhook_url is None:
                 raise ValueError(
-                    f"door {d.id!r} ({d.name!r}) has no held_open webhook: "
-                    f"set [protect].held_open_webhook_url or the per-door "
-                    f"held_open_webhook_url"
+                    f"door {d.id!r} ({d.name!r}) has no held_open_webhook_url. "
+                    f"Run `python -m scripts.bootstrap_protect_alarms --config "
+                    f"<path> --write` to create alarms + populate URLs, or set "
+                    f"held_open_webhook_url on this door by hand."
                 )
 
         return self

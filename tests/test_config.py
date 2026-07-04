@@ -12,8 +12,6 @@ host = "10.0.0.1"
 token = "${ACCESS_TOKEN}"
 
 [protect]
-unauthorized_webhook_url = "https://protect.example/unauth"
-held_open_webhook_url    = "https://protect.example/held"
 
 [defaults]
 grace_seconds = 8
@@ -24,15 +22,21 @@ id = "ext-1"
 name = "Front"
 grace_seconds = 0
 held_open_seconds = 30
+unauthorized_webhook_url = "https://protect.example/ext-1-unauth"
+held_open_webhook_url    = "https://protect.example/ext-1-held"
 
 [[door]]
 id = "int-1"
 name = "IT Closet"
 grace_seconds = 15
+unauthorized_webhook_url = "https://protect.example/int-1-unauth"
+held_open_webhook_url    = "https://protect.example/int-1-held"
 
 [[door]]
 id = "int-2"
 name = "Storage"
+unauthorized_webhook_url = "https://protect.example/int-2-unauth"
+held_open_webhook_url    = "https://protect.example/int-2-held"
 """
 
 
@@ -71,57 +75,27 @@ def test_defaults_applied_and_overrides_win(monkeypatch, tmp_path):
 
 def test_duplicate_door_id_rejected(monkeypatch, tmp_path):
     monkeypatch.setenv("ACCESS_TOKEN", "t")
-    body = CONFIG_TEMPLATE + '\n[[door]]\nid = "ext-1"\nname = "dup"\n'
+    body = CONFIG_TEMPLATE + (
+        "\n[[door]]\n"
+        'id = "ext-1"\n'
+        'name = "dup"\n'
+        'unauthorized_webhook_url = "https://protect.example/dup-unauth"\n'
+        'held_open_webhook_url    = "https://protect.example/dup-held"\n'
+    )
     with pytest.raises(Exception) as ei:
         load_config(_write(tmp_path, body))
     assert "Duplicate" in str(ei.value)
 
 
-def test_urls_parsed(monkeypatch, tmp_path):
+def test_per_door_webhook_urls_loaded(monkeypatch, tmp_path):
     monkeypatch.setenv("ACCESS_TOKEN", "t")
     cfg = load_config(_write(tmp_path))
-    assert str(cfg.protect.unauthorized_webhook_url).startswith("https://")
-    assert cfg.access.ws_url.startswith("wss://")
+    door = cfg.doors_by_id["ext-1"]
+    assert str(door.unauthorized_webhook_url) == "https://protect.example/ext-1-unauth"
+    assert str(door.held_open_webhook_url) == "https://protect.example/ext-1-held"
 
 
-def test_per_door_webhook_overrides_loaded(monkeypatch, tmp_path):
-    monkeypatch.setenv("ACCESS_TOKEN", "t")
-    body = CONFIG_TEMPLATE + (
-        "\n[[door]]\n"
-        'id = "vip"\n'
-        'name = "VIP Entrance"\n'
-        'unauthorized_webhook_url = "https://protect.example/vip-unauth"\n'
-        'held_open_webhook_url    = "https://protect.example/vip-held"\n'
-    )
-    cfg = load_config(_write(tmp_path, body))
-    door = cfg.doors_by_id["vip"]
-    assert str(door.unauthorized_webhook_url) == "https://protect.example/vip-unauth"
-    assert str(door.held_open_webhook_url) == "https://protect.example/vip-held"
-
-
-def test_global_urls_optional_when_all_doors_have_overrides(monkeypatch, tmp_path):
-    """A config that drops both [protect].*_webhook_url globals must be
-    valid as long as every door brings its own pair."""
-    monkeypatch.setenv("ACCESS_TOKEN", "t")
-    body = """
-[access]
-host = "10.0.0.1"
-token = "${ACCESS_TOKEN}"
-
-[protect]
-
-[[door]]
-id = "a"
-name = "A"
-unauthorized_webhook_url = "https://protect.example/a-unauth"
-held_open_webhook_url    = "https://protect.example/a-held"
-"""
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.protect.unauthorized_webhook_url is None
-    assert cfg.doors_by_id["a"].unauthorized_webhook_url is not None
-
-
-def test_door_without_any_webhook_rejected(monkeypatch, tmp_path):
+def test_door_missing_unauthorized_url_rejected(monkeypatch, tmp_path):
     monkeypatch.setenv("ACCESS_TOKEN", "t")
     body = """
 [access]
@@ -133,10 +107,32 @@ token = "${ACCESS_TOKEN}"
 [[door]]
 id = "lonely"
 name = "Lonely Door"
+held_open_webhook_url = "https://protect.example/lonely-held"
 """
     with pytest.raises(Exception) as ei:
         load_config(_write(tmp_path, body))
-    assert "no unauthorized webhook" in str(ei.value)
+    msg = str(ei.value)
+    assert "unauthorized_webhook_url" in msg
+    assert "bootstrap_protect_alarms" in msg  # error guides the operator
+
+
+def test_door_missing_held_open_url_rejected(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACCESS_TOKEN", "t")
+    body = """
+[access]
+host = "10.0.0.1"
+token = "${ACCESS_TOKEN}"
+
+[protect]
+
+[[door]]
+id = "lonely"
+name = "Lonely Door"
+unauthorized_webhook_url = "https://protect.example/lonely-unauth"
+"""
+    with pytest.raises(Exception) as ei:
+        load_config(_write(tmp_path, body))
+    assert "held_open_webhook_url" in str(ei.value)
 
 
 def test_protect_bootstrap_section_loaded(monkeypatch, tmp_path):

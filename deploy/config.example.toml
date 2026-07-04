@@ -17,11 +17,6 @@ liveness_timeout_seconds = 90
 # firing webhooks under `/proxy/protect/integration/v1/…`. Generated in
 # Protect → Settings → Control Plane → Integrations.
 token = "${PROTECT_TOKEN}"
-# Global fallback webhook URLs. Optional — if every door has its own
-# per-door override (populated by bootstrap_protect_alarms.py), these
-# can be omitted entirely. Doors without an override use the global.
-unauthorized_webhook_url = "${PROTECT_UNAUTH_URL}"
-held_open_webhook_url = "${PROTECT_HELD_URL}"
 request_timeout_seconds = 5
 retry_attempts = 3
 dedupe_window_seconds = 30
@@ -50,13 +45,23 @@ expose_state = true
 grace_seconds = 8
 held_open_seconds = 60
 
-# Run `python -m scripts.bootstrap_doors --config /etc/unifi-door-watcher/config.toml --write`
-# to populate the [[door]] blocks below from the live Access API. Then hand-edit
-# the two exterior doors to add `grace_seconds = 0` (strict mode).
+# Two-step setup for [[door]] blocks:
+#
+#   1. `python -m scripts.bootstrap_doors --config <this file> --write` reads
+#      the live Access API and writes an entry per door (id + name).
+#
+#   2. `python -m scripts.bootstrap_protect_alarms --config <this file> --write`
+#      creates one Protect Alarm Manager alarm per door per alert type and
+#      writes the resulting `unauthorized_webhook_url` / `held_open_webhook_url`
+#      into each door's block. Every door must end up with both URLs before
+#      the watcher will start; if you skip the bootstrap script you have to
+#      create the alarms in Protect's UI and paste the URLs in by hand.
 #
 # `name` is the operator-facing label that appears in Protect alerts. The
 # watcher matches events by `id` (door UUID) and `event_object_id` from the
-# wire — never by name — so you can change `name` freely.
+# wire — never by name — so you can change `name` freely without affecting
+# event handling. Rerun bootstrap_protect_alarms if you want the notification
+# text to reflect the new name.
 
 [[door]]
 # Front Entrance (exterior — strict, no grace)
@@ -64,9 +69,13 @@ id = "REPLACE-WITH-FRONT-DOOR-UUID"
 name = "Front Entrance"
 grace_seconds = 0
 held_open_seconds = 30
+unauthorized_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+held_open_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
 
 [[door]]
 # IT Closet (interior)
 id = "REPLACE-WITH-IT-CLOSET-UUID"
 name = "IT Closet"
 grace_seconds = 15
+unauthorized_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"
+held_open_webhook_url = "https://10.12.120.216/proxy/protect/integration/v1/alarm-manager/webhook/REPLACE"

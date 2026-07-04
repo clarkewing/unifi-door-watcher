@@ -71,8 +71,6 @@ token = "${ACCESS_TOKEN}"
 
 [protect]
 token = "${PROTECT_TOKEN}"
-unauthorized_webhook_url = "${PROTECT_UNAUTH_URL}"
-held_open_webhook_url    = "${PROTECT_HELD_URL}"
 
 [defaults]
 grace_seconds     = 8
@@ -83,30 +81,62 @@ id   = "abc-…"
 name = "Front Entrance"
 grace_seconds     = 0        # exterior, strict
 held_open_seconds = 30
-
-[[door]]
-id   = "def-…"
-name = "IT Closet"
-grace_seconds = 15
+unauthorized_webhook_url = "https://…/webhook/…"
+held_open_webhook_url    = "https://…/webhook/…"
 ```
 
-Every configured door needs an `id` (the door UUID from the Access
-API) and a `name`. Per-door `grace_seconds` / `held_open_seconds`
-override the `[defaults]`. See `deploy/config.example.toml` for the
-full annotated form.
+Every door needs an `id` (the door UUID from the Access API), a
+`name`, and its own `unauthorized_webhook_url` /
+`held_open_webhook_url`. Per-door `grace_seconds` / `held_open_seconds`
+override the `[defaults]`. The watcher refuses to start until every
+door has both URLs — populate them via the bootstrap workflow below or
+by hand from the Protect Alarm Manager UI. See
+`deploy/config.example.toml` for the full annotated form.
 
-## Bootstrapping
+## Bootstrap workflow
 
-Bootstrap the door list from the live Access API rather than typing
-a bunch of UUIDs by hand:
+Two scripts turn an empty config into a fully-populated one. Both are
+idempotent — re-run whenever things change on either the Access or
+Protect side.
+
+### 1. Populate the door list from Access
 
 ```
 python -m scripts.bootstrap_doors --config /etc/unifi-door-watcher/config.toml --write
 ```
 
-This filters out doors with no DPS wired (they can't trigger
-unauthorized-open detection) and warns about them on stderr. Re-run
-whenever doors are added or renamed in Access.
+Fetches the door list from the Access developer API and writes one
+`[[door]]` block per DPS-equipped door, keyed by UUID. Doors without a
+DPS sensor are excluded with a warning — they can't trigger the
+watcher's unauthorized-open detection. Re-run whenever doors are added
+or renamed in Access.
+
+### 2. Create per-door alarms in Protect
+
+```
+python -m scripts.bootstrap_protect_alarms --config /etc/unifi-door-watcher/config.toml --write
+```
+
+For each `(door, alert_type)` pair, creates a UniFi Protect Alarm
+Manager alarm whose title is the door name and whose recipient list is
+whatever you configured in `[protect.bootstrap].notification_users`.
+Writes each alarm's trigger URL back into the door's config block.
+
+Protect's Alarm Manager doesn't template notification text from the
+webhook body — the alarm's static `name`/`message` are what get pushed
+to phones. So getting per-door notification text means one alarm per
+door per alert type. This script does that with two API calls per door
+instead of 48 clicks in the UI.
+
+Requires a **local Protect user** (Protect → Users → Add User → Local
+Access Only) with permission to manage automations, plus the endpoint
+details in `[protect.bootstrap]`. Uses session-cookie auth (which
+Protect's private automations API requires), not the `X-API-Key` token
+the runtime uses for firing webhooks.
+
+If you'd rather not run the script, you can create the alarms by hand
+in Protect's UI and paste the resulting webhook URLs into each door's
+`unauthorized_webhook_url` and `held_open_webhook_url` fields.
 
 ## Deployment
 

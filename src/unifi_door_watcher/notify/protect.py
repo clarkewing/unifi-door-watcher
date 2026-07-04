@@ -95,16 +95,18 @@ class ProtectAlertSink:
                 self.failed_deliveries += 1
 
     def _url_for(self, alert: Alert) -> str | None:
-        """Per-door override wins; global fallback otherwise. Returns None
-        only if neither is configured — caller treats that as a delivery
-        failure. (AppConfig validation should make this unreachable.)"""
+        """Look up the per-door webhook URL for this alert type. AppConfig
+        validation guarantees every door has both URLs set, so `None`
+        here indicates a genuinely unregistered door (e.g. an event for
+        a UUID not in our config)."""
         door = self._doors_by_id.get(alert.door_id)
-        if alert.alert_type == "unauthorized":
-            per_door = door.unauthorized_webhook_url if door else None
-            url = per_door or self._cfg.unauthorized_webhook_url
-        else:
-            per_door = door.held_open_webhook_url if door else None
-            url = per_door or self._cfg.held_open_webhook_url
+        if door is None:
+            return None
+        url = (
+            door.unauthorized_webhook_url
+            if alert.alert_type == "unauthorized"
+            else door.held_open_webhook_url
+        )
         return str(url) if url else None
 
     async def _deliver_with_retries(self, alert: Alert) -> bool:
