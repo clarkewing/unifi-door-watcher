@@ -10,9 +10,10 @@ notification title) and `metadata.text` (used as the notification body),
 then patches the resulting webhook URLs back into config.toml under
 each door's `unauthorized_webhook_url` / `held_open_webhook_url` fields.
 
-Idempotent: alarms are matched by exact `name` (with the marker prefix
-`[door-watcher]`). Re-run after adding doors, renaming them, or changing
-the notification recipient list.
+Idempotent: alarms are matched by webhook UUID — read from each door's
+existing `*_webhook_url` in config, compared to each existing
+automation's `conditions.value`. Re-run after adding doors, renaming
+them, or changing the notification recipient list.
 
 Usage:
     python -m scripts.bootstrap_protect_alarms --config local.config.toml --dry-run
@@ -41,20 +42,21 @@ from unifi_door_watcher.config import AppConfig, load_config
 
 log = logging.getLogger("bootstrap_protect_alarms")
 
-# All alarms this script creates carry this prefix in their `name` field.
-# Match logic uses the full name (prefix + door name + alert-type suffix)
-# so hand-created alarms with other names are never touched.
-NAME_PREFIX = "[door-watcher]"
-
 ALERT_LABELS: dict[str, tuple[str, str]] = {
-    # alert_type → (title suffix, notification body template)
+    # alert_type → (title suffix, body template with {door_name})
+    #
+    # The body carries a leading 🚨 because Protect's title area truncates
+    # aggressively on mobile — the emoji shows up in the always-visible
+    # body preview and draws the eye when a stack of notifications piles
+    # up on the lock screen. The body ALSO repeats the door name so it
+    # remains identifiable even when the title truncates on-screen.
     "unauthorized": (
         "Unauthorized opening",
-        "Unauthorized opening detected at {door_name}.",
+        "🚨 {door_name}: Opened without authorization.",
     ),
     "held_open": (
         "Held open",
-        "{door_name} has been held open beyond its threshold.",
+        "🚨 {door_name}: Held open too long.",
     ),
 }
 
@@ -64,12 +66,21 @@ ALERT_LABELS: dict[str, tuple[str, str]] = {
 
 def alarm_name(door_name: str, alert_type: str) -> str:
     suffix, _ = ALERT_LABELS[alert_type]
-    return f"{NAME_PREFIX} {door_name} — {suffix}"
+    return f"{door_name} — {suffix}"
 
 
 def alarm_body(door_name: str, alert_type: str) -> str:
     _, template = ALERT_LABELS[alert_type]
     return template.format(door_name=door_name)
+
+
+def webhook_uuid_from_url(url: str | None) -> str | None:
+    """Pluck the trailing UUID segment from a Protect alarm-manager trigger
+    URL. Returns None if `url` is empty or has no path segment."""
+    if not url:
+        return None
+    tail = url.rstrip("/").rsplit("/", 1)[-1]
+    return tail or None
 
 
 def trigger_url(host: str, webhook_uuid: str) -> str:
@@ -309,7 +320,17 @@ async def bootstrap(config: AppConfig, config_path: Path, dry_run: bool, write_c
         )
 
         existing = await client.list_automations()
-        by_name: dict[str, dict[str, Any]] = {a["name"]: a for a in existing}
+        # Match by webhook UUID rather than by name — the config already
+        # carries the URLs (and therefore the UUIDs) for previously-
+        # created alarms, so we can look each one up directly. Robust to
+        # someone renaming an alarm in the Protect UI, and lets us drop
+        # the `[door-watcher]` marker from the notification title without
+        # losing idempotency.
+        by_uuid: dict[str, dict[str, Any]] = {}
+        for a in existing:
+            u = existing_webhook_uuid(a)
+            if u:
+                by_uuid[u] = a
 
         result_urls: dict[tuple[str, str], str] = {}
         created = updated = 0
@@ -318,9 +339,20 @@ async def bootstrap(config: AppConfig, config_path: Path, dry_run: bool, write_c
                 name = alarm_name(door.name, alert_type)
                 body = alarm_body(door.name, alert_type)
 
-                if name in by_name:
-                    prev = by_name[name]
-                    webhook_uuid = existing_webhook_uuid(prev) or str(uuid.uuid4())
+                # If the config already has a URL for this (door, type),
+                # try to match by its embedded UUID.
+                configured_url = (
+                    door.unauthorized_webhook_url
+                    if alert_type == "unauthorized"
+                    else door.held_open_webhook_url
+                )
+                configured_uuid = webhook_uuid_from_url(
+                    str(configured_url) if configured_url else None
+                )
+                prev = by_uuid.get(configured_uuid) if configured_uuid else None
+
+                if prev is not None:
+                    webhook_uuid = configured_uuid  # type: ignore[assignment]
                     payload = make_payload(
                         name,
                         body,

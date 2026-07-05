@@ -20,16 +20,40 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import bootstrap_protect_alarms as boot
 
 
-def test_alarm_name_uses_prefix_door_name_and_suffix():
+def test_alarm_name_uses_door_name_and_suffix():
     assert boot.alarm_name("Front Entrance", "unauthorized") == (
-        "[door-watcher] Front Entrance — Unauthorized opening"
+        "Front Entrance — Unauthorized opening"
     )
-    assert boot.alarm_name("IT Closet", "held_open") == ("[door-watcher] IT Closet — Held open")
+    assert boot.alarm_name("IT Closet", "held_open") == "IT Closet — Held open"
 
 
-def test_alarm_body_mentions_door_name():
-    assert "Front Entrance" in boot.alarm_body("Front Entrance", "unauthorized")
-    assert "IT Closet" in boot.alarm_body("IT Closet", "held_open")
+def test_alarm_body_mentions_door_name_with_leading_emoji():
+    """Body starts with an emoji so it's visible in the lock-screen
+    preview even when the title truncates, and includes the door name
+    so the door is identifiable from the body alone."""
+    unauth = boot.alarm_body("Front Entrance", "unauthorized")
+    held = boot.alarm_body("IT Closet", "held_open")
+    assert unauth.startswith("🚨")
+    assert held.startswith("🚨")
+    assert "Front Entrance" in unauth
+    assert "IT Closet" in held
+    assert unauth == "🚨 Front Entrance: Opened without authorization."
+    assert held == "🚨 IT Closet: Held open too long."
+
+
+def test_webhook_uuid_from_url_extracts_trailing_segment():
+    url = "https://protect.example/proxy/protect/integration/v1/alarm-manager/webhook/abc-123"
+    assert boot.webhook_uuid_from_url(url) == "abc-123"
+
+
+def test_webhook_uuid_from_url_tolerates_trailing_slash():
+    url = "https://protect.example/webhook/abc-123/"
+    assert boot.webhook_uuid_from_url(url) == "abc-123"
+
+
+def test_webhook_uuid_from_url_none_for_empty_input():
+    assert boot.webhook_uuid_from_url(None) is None
+    assert boot.webhook_uuid_from_url("") is None
 
 
 def test_trigger_url_shape():
@@ -65,14 +89,14 @@ def test_resolve_receiver_ids_unknown_raises_with_available_list():
 
 def test_make_payload_structure_matches_captured_shape():
     payload = boot.make_payload(
-        name="[door-watcher] Front — Unauthorized opening",
-        body_text="Unauthorized opening at Front.",
+        name="Front — Unauthorized opening",
+        body_text="🚨 Front: Opened without authorization.",
         webhook_uuid="uuid-1",
         receiver_ids=["u1", "u2"],
         channels=["push"],
         cooldown_seconds=30,
     )
-    assert payload["name"].startswith("[door-watcher]")
+    assert payload["name"] == "Front — Unauthorized opening"
     assert payload["enable"] is True
     assert payload["conditions"][0]["condition"] == {
         "type": "is",
@@ -80,7 +104,7 @@ def test_make_payload_structure_matches_captured_shape():
         "value": "uuid-1",
     }
     assert payload["actions"][0]["type"] == "SEND_NOTIFICATION"
-    assert payload["actions"][0]["metadata"]["text"] == "Unauthorized opening at Front."
+    assert payload["actions"][0]["metadata"]["text"] == "🚨 Front: Opened without authorization."
     receivers = payload["actions"][0]["metadata"]["receivers"]
     assert [r["user"] for r in receivers] == ["u1", "u2"]
     assert all(r["channels"] == ["push"] for r in receivers)
